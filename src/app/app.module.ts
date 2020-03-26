@@ -99,6 +99,7 @@ import { BannerCarouselComponent } from './banner-carousel/banner-carousel.compo
 import { AbbreviateNumberPipe } from './abbreviate-number.pipe';
 import { FormatNumberPipe } from './format-number.pipe';
 import { ScriptingNetworkingComponent } from './scripting-networking/scripting-networking.component';
+import { NgxJsonLdModule } from '@ngx-lite/json-ld';
 
 export function hljsLanguages() {
     return [{ name: 'cs', func: cs }];
@@ -204,6 +205,7 @@ export function hljsLanguages() {
         LightboxModule,
         RecaptchaModule,
         AutocompleteLibModule,
+        NgxJsonLdModule,
     ],
     providers: [NotLoginGuard, LoginGuard, AppsToUpdateService],
     bootstrap: [AppComponent],

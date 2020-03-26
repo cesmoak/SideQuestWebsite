@@ -12,6 +12,7 @@ import { AppCounter, AppUrl, GithubRelease, ScreenShot, VideObject } from '../ap
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { IAlbum, Lightbox } from 'ngx-lightbox';
 import { MzModalComponent } from 'ngx-materialize';
+import { Meta, Title } from '@angular/platform-browser';
 
 interface SocialIcon {
     provider: string;
@@ -136,13 +137,17 @@ export class AppListingComponent implements OnInit, OnDestroy {
     searchString: string;
     isAccepted: boolean;
     itchUrl;
+    public linkedData: any;
+    private cleanVideoUrl: string;
     constructor(
         private router: Router,
         public service: AppService,
         public expanseService: ExpanseClientService,
         route: ActivatedRoute,
         private sanitizer: DomSanitizer,
-        public lightbox: Lightbox
+        public lightbox: Lightbox,
+        private meta: Meta,
+        private title: Title
     ) {
         this.sub = this.router.events.subscribe(async val => {
             if (val instanceof NavigationEnd) {
@@ -168,7 +173,8 @@ export class AppListingComponent implements OnInit, OnDestroy {
                             this.service.isAuthenticated &&
                             Number(this.currentApp.users_id) === Number(this.expanseService.currentSession.users_id);
                     })
-                    .then(() => this.getReviews());
+                    .then(() => this.getReviews())
+                    .then(() => this.setupHeadTags());
             }
         });
     }
@@ -511,6 +517,12 @@ export class AppListingComponent implements OnInit, OnDestroy {
                 }
                 this.videoObject = urlParser.parse(this.currentApp.video_url);
                 if (this.videoObject) {
+                    const cleanVideoObjectId = this.videoObject.id.replace(/[^a-z0-9_-]/gim, '');
+                    this.cleanVideoUrl =
+                        this.videoObject.provider === 'youtube'
+                            ? 'https://www.youtube.com/embed/' + cleanVideoObjectId
+                            : 'https://player.vimeo.com/video/' + cleanVideoObjectId + '?byline=0&portrait=0&transparent=0';
+
                     this.videoUrl = this.sanitizer.bypassSecurityTrustResourceUrl(
                         this.videoObject.provider === 'youtube'
                             ? 'https://www.youtube.com/embed/' + this.videoObject.id
@@ -664,5 +676,86 @@ export class AppListingComponent implements OnInit, OnDestroy {
 
     private isCurrentUserAppOwner(): boolean {
         return this.service.isAuthenticated && this.currentApp.users_id == this.expanseService.currentSession.users_id;
+    }
+
+    private setupHeadTags() {
+        const title = `${this.currentApp.name} on SideQuest`;
+        const description = this.currentApp.summary;
+        const author = this.currentApp.user_name;
+        const image = this.currentApp.image_url
+            ? this.currentApp.image_url
+            : this.screenshots && this.screenshots.length > 0
+            ? this.screenshots[this.screenshots.length - 1]
+            : '';
+        const url = document.URL;
+        const video = this.cleanVideoUrl || '';
+
+        this.title.setTitle(title);
+        this.meta.updateTag({ name: 'title', content: title });
+        this.meta.updateTag({ name: 'description', content: description });
+
+        this.meta.updateTag({ property: 'og:title', content: title });
+        this.meta.updateTag({ property: 'og:image', content: image });
+        this.meta.updateTag({ property: 'og:url', content: url });
+        this.meta.updateTag({ property: 'og:description', content: description });
+        this.meta.updateTag({ property: 'og:site_name', content: 'SideQuest' });
+        this.meta.updateTag({ property: 'og:video', content: video });
+
+        this.meta.updateTag({ property: 'twitter:title', content: title });
+        this.meta.updateTag({ property: 'twitter:site', content: '@SideQuestVR' });
+        this.meta.updateTag({ property: 'twitter:creator', content: author });
+        this.meta.updateTag({ property: 'twitter:description', content: description });
+        this.meta.updateTag({ property: 'twitter:image', content: image });
+
+        const gamePlatform = this.currentApp.supports_quest
+            ? {
+                  '@type': 'Thing',
+                  name: 'Oculus Quest',
+                  sameAs: 'https://en.wikipedia.org/wiki/Oculus_Quest',
+              }
+            : this.currentApp.supports_go
+            ? {
+                  '@type': 'Thing',
+                  name: 'Oculus Go',
+                  sameAs: 'https://en.wikipedia.org/wiki/Oculus_Go',
+              }
+            : undefined;
+
+        const trailer = video
+            ? {
+                  '@type': 'VideoObject',
+                  embedUrl: video,
+              }
+            : undefined;
+
+        const screenshot =
+            this.screenshots && this.screenshots.length > 0 ? this.screenshots[this.screenshots.length - 1] : undefined;
+
+        const dateCreated = new Date(+this.currentApp.created).toISOString().substring(0, 10);
+        const dateModified = new Date(+this.currentApp.updated).toISOString().substring(0, 10);
+        const ratingValue = parseFloat((this.appRating as unknown) as string).toFixed(2);
+
+        this.linkedData = {
+            '@context': 'http://schema.org/',
+            '@type': 'VideoGame',
+            gamePlatform,
+            trailer,
+            screenshot,
+            author: {
+                '@type': 'Organization',
+                name: author,
+            },
+            dateCreated,
+            dateModified,
+            description,
+            image: image ? image : undefined,
+            name: this.currentApp.name,
+            url,
+            aggregateRating: {
+                '@type': 'AggregateRating',
+                ratingValue,
+                reviewCount: this.appRatingTotal,
+            },
+        };
     }
 }
