@@ -733,7 +733,17 @@ export class AppListingComponent implements OnInit, OnDestroy {
 
         const dateCreated = new Date(+this.currentApp.created).toISOString().substring(0, 10);
         const dateModified = new Date(+this.currentApp.updated).toISOString().substring(0, 10);
-        const ratingValue = parseFloat((this.appRating as unknown) as string).toFixed(2);
+        const ratingCount = +this.appRatingTotal;
+        const ratingValue = ratingCount > 0 ? parseFloat((this.appRating as unknown) as string).toFixed(2) : undefined;
+        const aggregateRating =
+            ratingCount > 0
+                ? {
+                      '@type': 'AggregateRating',
+                      ratingValue,
+                      ratingCount,
+                      reviewCount: ratingCount,
+                  }
+                : undefined;
 
         this.linkedData = {
             '@context': 'http://schema.org/',
@@ -751,11 +761,7 @@ export class AppListingComponent implements OnInit, OnDestroy {
             image: image ? image : undefined,
             name: this.currentApp.name,
             url,
-            aggregateRating: {
-                '@type': 'AggregateRating',
-                ratingValue,
-                reviewCount: this.appRatingTotal,
-            },
+            aggregateRating,
         };
     }
 }
