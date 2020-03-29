@@ -147,7 +147,10 @@ export class AppListingComponent implements OnInit, OnDestroy {
         this.sub = this.router.events.subscribe(async val => {
             if (val instanceof NavigationEnd) {
                 this.apps_id = Number(route.snapshot.paramMap.get('apps_id'));
-                let clickthrough = Number(route.snapshot.paramMap.get('clickthrough'));
+
+                const isLegacyClickthrough = route.snapshot.paramMap.get('app_name') === '1';
+                const isTrackingClickthrough = route.snapshot.queryParamMap.has('ct') || isLegacyClickthrough;
+
                 if (!Number.isInteger(this.apps_id)) {
                     this.apps_id = null;
                 } else {
@@ -155,20 +158,27 @@ export class AppListingComponent implements OnInit, OnDestroy {
                     this.app_meta = this.service.app_meta[this.apps_id];
                 }
                 this.page = 0;
-                this.setupApp()
-                    .then(() => this.viewApp())
-                    .then(() => {
-                        if (clickthrough) {
-                            return this.clickThroughApp();
-                        }
-                    })
-                    .then(() => {
-                        this.loading = false;
-                        this.isMine =
-                            this.service.isAuthenticated &&
-                            Number(this.currentApp.users_id) === Number(this.expanseService.currentSession.users_id);
-                    })
-                    .then(() => this.getReviews());
+                await this.setupApp();
+
+                const appParamName = this.service.appParamName(this.currentApp);
+                const isAppNameCorrect = route.snapshot.paramMap.get('app_name') === appParamName;
+                if (!isAppNameCorrect) {
+                    const queryParams = {};
+                    if (isTrackingClickthrough) {
+                        queryParams['ct'] = '1';
+                    }
+                    return router.navigate(['/app/', this.apps_id, appParamName], { queryParams, replaceUrl: true });
+                }
+
+                await this.viewApp();
+                if (isTrackingClickthrough) {
+                    await this.clickThroughApp();
+                }
+                this.loading = false;
+                this.isMine =
+                    this.service.isAuthenticated &&
+                    Number(this.currentApp.users_id) === Number(this.expanseService.currentSession.users_id);
+                await this.getReviews();
             }
         });
     }
@@ -261,7 +271,7 @@ export class AppListingComponent implements OnInit, OnDestroy {
         (window as any).history.back();
     }
 
-    copyShareUrl(isRefresh?) {
+    copyShareUrl() {
         if (navigator.clipboard) {
             navigator.clipboard.writeText(this.currentApp.donate_url).then(
                 () => {
@@ -287,7 +297,7 @@ export class AppListingComponent implements OnInit, OnDestroy {
         }
     }
 
-    clickThroughApp() {
+    async clickThroughApp() {
         if (!this.app_meta.ct) {
             return this.expanseService.appCount('click', this.apps_id).then((res: any) => {
                 if (!res.error) {

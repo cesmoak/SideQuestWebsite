@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { MzModalComponent, MzToastService } from 'ngx-materialize';
 import { ExpanseClientService } from './expanse-client.service';
 import { Subject } from 'rxjs';
-import { AccountComponent } from './account/account.component';
+import { AccountComponent, AppListing } from './account/account.component';
 
 interface Notifications {
     friend_requests: any[];
@@ -361,5 +361,9 @@ export class AppService {
                 })
             )
             .then(r => r.json());
+    }
+
+    public appParamName(app: AppListing) {
+        return app.name.replace(/[^a-z0-9 -]/gim, '').replace(/\s/gim, '-');
     }
 }

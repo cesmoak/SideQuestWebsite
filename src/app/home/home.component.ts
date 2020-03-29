@@ -4,6 +4,8 @@ import { DomSanitizer } from '@angular/platform-browser';
 import { AppListing } from '../account/account.component';
 import { IImage } from 'ng-simple-slideshow';
 import { ExpanseClientService } from '../expanse-client.service';
+import { ActivatedRoute, Router } from '@angular/router';
+import { map } from 'rxjs/operators';
 
 export interface NewsItem {
     title: string;
@@ -48,17 +50,12 @@ export class HomeComponent implements OnInit, AfterViewInit {
     firstNews: NewsItem[];
     page: number = 0;
     sliderClass = '';
-    expanseNews: NewsItem = {
-        title: 'The Expanse VR',
-        description: 'Create your social expereince',
-        type: 'app',
-        message_type: '',
-        url: 'https://sidequestvr.com/#/app/12',
-        image: this.expanseService.cdnUrl + 'file/1119/Untitled-1 (2).jpg',
-        video: '',
-        created: '0',
-    };
-    constructor(public appService: AppService, public expanseService: ExpanseClientService) {
+    constructor(
+        public appService: AppService,
+        public expanseService: ExpanseClientService,
+        private activatedRoute: ActivatedRoute,
+        private router: Router
+    ) {
         // this.appService.scrollContainer.onscroll = ev => {
         //   const scroller = this.appService.scrollContainer;
         //   if (
@@ -95,6 +92,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
     // }
 
     ngOnInit() {
+        this.handleHashPath();
         this.getNews();
         return this.expanseService
             .start()
@@ -187,7 +185,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
             // ];
             if (this.firstNews.length < 8) {
                 this.firstNews = this.firstNews.concat(
-                    this.news.filter(d => d.image && (d.type !== 'event' && d.type !== 'app')).slice(0, 8 - this.firstNews.length)
+                    this.news.filter(d => d.image && d.type !== 'event' && d.type !== 'app').slice(0, 8 - this.firstNews.length)
                 );
             }
             this.imageUrls = this.firstNews.map(d => {
@@ -225,4 +223,11 @@ export class HomeComponent implements OnInit, AfterViewInit {
     }
 
     ngAfterViewInit() {}
+
+    private handleHashPath() {
+        const fragment = this.activatedRoute.snapshot.fragment;
+        if (fragment && fragment.length > 0) {
+            this.router.navigateByUrl(fragment, { queryParamsHandling: 'preserve', replaceUrl: true });
+        }
+    }
 }

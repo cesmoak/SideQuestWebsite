@@ -6,6 +6,7 @@ import { ActivatedRoute, NavigationEnd, Router } from '@angular/router';
 import { UploadService } from '../upload.service';
 import { Subscription } from 'rxjs';
 import { AppsToUpdateService } from '../apps-to-update.service';
+import { PlatformLocation } from '@angular/common';
 export interface Review {
     details: string;
     preview_image: string;
@@ -91,6 +92,7 @@ export interface AppListing {
     rating?: number;
     num_of_reviews?: number;
     current_version?: number;
+    url?: string;
 }
 export interface EventListing {
     name: string;
@@ -235,7 +237,8 @@ export class AccountComponent implements OnInit, OnDestroy {
         public router: Router,
         public uploadService: UploadService,
         private route: ActivatedRoute,
-        private appsToUpdateService: AppsToUpdateService
+        private appsToUpdateService: AppsToUpdateService,
+        private platformLocation: PlatformLocation
     ) {
         this.isDev = !!localStorage.getItem('isDeveloper');
         this.isUpdated = !!localStorage.getItem('viewIsUpdated');
@@ -356,9 +359,16 @@ export class AccountComponent implements OnInit, OnDestroy {
                 this.expanseService.currentSession.tag_line,
                 this.expanseService.currentSession.banner_image ||
                     this.expanseService.cdnUrl + this.expanseService.currentSession.preview_image,
-                'https://sidequestvr.com/#/user/' + this.expanseService.currentSession.users_id
+                this.userProfileUrl()
             )
             .then(r => (this.expanseService.currentSession.donate_url = r.url));
+    }
+
+    private userProfileUrl() {
+        const { protocol, hostname, port: _port } = this.platformLocation;
+        const port = _port === '443' ? '' : `:${_port}`;
+        const path = this.router.createUrlTree(['/user', this.expanseService.currentSession.users_id]);
+        return `${protocol}//${hostname}${port}${path}`;
     }
 
     removeUrl(key) {

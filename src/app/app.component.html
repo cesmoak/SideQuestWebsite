@@ -7,12 +7,14 @@
         <i (click)="sidenav.opened = true" class="material-icons medium white-text">menu</i>
       </div>
       <!--<img src="assets/images/logo-large icony.png"/>-->
-      <img class="top-main-logo" src="assets/images/new-logo.png"/>
+      <a routerLink="/">
+        <img class="top-main-logo" src="assets/images/new-logo.png" />
+      </a>
       <!--<img class="spider-image" src="https://i.giphy.com/media/V3sjIPOXgP5Zu/giphy.webp"/>-->
     </a>
   </div>
   <app-user-menu></app-user-menu>
-<!--  <updates-count></updates-count>-->
+  <!--  <updates-count></updates-count>-->
   <div class="top-buttons hide-on-med-and-down">
     <app-main-menu></app-main-menu>
   </div>
@@ -26,8 +28,10 @@
         <i (click)="sidenav.opened = true" class="material-icons medium white-text">menu</i>
       </div>
       <!--<img src="assets/images/logo-large icony.png"/>-->
-      <img src="assets/images/score-logo.png" class="hide-on-med-and-down"/>
-      <img src="assets/images/new-logo.png" class="hide-on-large-only"/>
+      <a routerLink="/">
+        <img src="assets/images/score-logo.png" class="hide-on-med-and-down" />
+        <img src="assets/images/new-logo.png" class="hide-on-large-only" />
+      </a>
       <!--<img class="spider-image" src="https://i.giphy.com/media/V3sjIPOXgP5Zu/giphy.webp"/>-->
     </a>
   </div>
@@ -39,11 +43,7 @@
 
 
 
-<mz-sidenav
-  [closeOnClick]="true"
-  [draggable]="false"
-  [id]="'mobile-menu'"
-  #sidenav>
+<mz-sidenav [closeOnClick]="true" [draggable]="false" [id]="'mobile-menu'" #sidenav>
   <mz-sidenav-header>
     <h5 class="black-text center-align">Main Menu</h5>
   </mz-sidenav-header>
@@ -66,9 +66,9 @@
   <mz-sidenav-link>
     <a routerLink="download">Download</a>
   </mz-sidenav-link>
-<!--  <mz-sidenav-link>-->
-<!--    <a routerLink="developers">Developers</a>-->
-<!--  </mz-sidenav-link>-->
+  <!--  <mz-sidenav-link>-->
+  <!--    <a routerLink="developers">Developers</a>-->
+  <!--  </mz-sidenav-link>-->
   <mz-sidenav-link>
     <a href="http://tee.pub/lic/L295azlpJYk" target="_blank">Gift Shop</a>
   </mz-sidenav-link>
@@ -76,8 +76,8 @@
     <a routerLink="what-is-sidequest">What is SideQuest?</a>
   </mz-sidenav-link>
   <mz-sidenav-link>
-    <a [routerLink]="appService.isAuthenticated ? 'account' : 'login'"
-       >{{appService.isAuthenticated? 'Dashboard' : 'Sign In'}}</a>
+    <a
+      [routerLink]="appService.isAuthenticated ? 'account' : 'login'">{{appService.isAuthenticated? 'Dashboard' : 'Sign In'}}</a>
   </mz-sidenav-link>
   <mz-sidenav-link>
     <a routerLink="setup-howto">Setup</a>
@@ -90,12 +90,13 @@
   </mz-sidenav-link>
 </mz-sidenav>
 
-<div #scrollContainer [ngClass]="{'scroll-container-small':appService.hideLogo,'scroll-container':!appService.hideLogo}">
+<div #scrollContainer
+  [ngClass]="{'scroll-container-small':appService.hideLogo,'scroll-container':!appService.hideLogo}">
   <router-outlet></router-outlet>
   <app-footer></app-footer>
 </div>
 
-<mz-modal #confirmOpen [fixedFooter]="true" [options]="{dismissible: false}" >
+<mz-modal #confirmOpen [fixedFooter]="true" [options]="{dismissible: false}">
   <mz-modal-header>
     <h4>Opening With SideQuest</h4>
   </mz-modal-header>
@@ -105,16 +106,21 @@
       Please check the SideQuest app for progress and click confirm when you're done for us to update things on this
       end.
       If you need to install SideQuest please click download below and come back here to try this again.<br><br>
-      <button mz-button class="white-text pink-button" mz-modal-close routerLink="/download" (click)="appService.cancelSidequestUrl()">Download</button>
+      <button mz-button class="white-text pink-button" mz-modal-close routerLink="/download"
+        (click)="appService.cancelSidequestUrl()">Download</button>
       <br><br>
       <span *ngIf="appService.urlTimeoutValue">This screen will auto confirm in 30s, click wait to stop the clock</span>
       <br><br><span *ngIf="appService.urlTimeoutValue">{{appService.urlTimeoutValue}}</span><br><br>
-      <button mz-button *ngIf="appService.urlTimeoutValue" class="white-text pink-button margin-left" (click)="appService.clearUrlTimeout()">Wait</button>
+      <button mz-button *ngIf="appService.urlTimeoutValue" class="white-text pink-button margin-left"
+        (click)="appService.clearUrlTimeout()">Wait</button>
     </div>
   </mz-modal-content>
   <mz-modal-footer>
-    <button mz-button class="white-text waves-light" [flat]="true" (click)="appService.cancelSidequestUrl()" mz-modal-close>Cancel</button>
-    <button mz-button class="white-text margin-left" [flat]="true"  (click)="appService.retrySidequestUrl()">Retry</button>
-    <button mz-button class="white-text pink-button margin-left" mz-modal-close (click)="appService.confirmSidequestUrl()">Confirm</button>
+    <button mz-button class="white-text waves-light" [flat]="true" (click)="appService.cancelSidequestUrl()"
+      mz-modal-close>Cancel</button>
+    <button mz-button class="white-text margin-left" [flat]="true"
+      (click)="appService.retrySidequestUrl()">Retry</button>
+    <button mz-button class="white-text pink-button margin-left" mz-modal-close
+      (click)="appService.confirmSidequestUrl()">Confirm</button>
   </mz-modal-footer>
 </mz-modal>
