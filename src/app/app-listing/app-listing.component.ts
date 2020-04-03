@@ -1,17 +1,18 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, Inject, PLATFORM_ID } from '@angular/core';
 import { AppListing, Review } from '../account/account.component';
-import { ActivatedRoute, NavigationEnd, Router } from '@angular/router';
+import { ActivatedRoute, Router, ActivatedRouteSnapshot } from '@angular/router';
 import { AppService } from '../app.service';
 import { ExpanseClientService } from '../expanse-client.service';
-import { Subscription } from 'rxjs';
 
 import * as urlParser from '../../../node_modules/js-video-url-parser/lib/base';
 import 'js-video-url-parser/lib/provider/vimeo';
 import 'js-video-url-parser/lib/provider/youtube';
-import { AppCounter, AppUrl, GithubRelease, ScreenShot, VideObject } from '../app-manager/app-manager.component';
+import { AppUrl, GithubRelease, VideObject } from '../app-manager/app-manager.component';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 import { IAlbum, Lightbox } from 'ngx-lightbox';
 import { MzModalComponent } from 'ngx-materialize';
+import { isPlatformBrowser, isPlatformServer } from '@angular/common';
+import { RouteListenerService } from '../route-listener.service';
 
 interface SocialIcon {
     provider: string;
@@ -45,14 +46,14 @@ export class UrlIcons {
     'Epic Store' = { icon: 'assets/images/social/EpicStore.png' };
     Viveport = { icon: 'assets/images/social/Viveport.png' };
 }
+
 @Component({
     selector: 'app-app-listing',
     templateUrl: './app-listing.component.html',
     styleUrls: ['./app-listing.component.css'],
 })
-export class AppListingComponent implements OnInit, OnDestroy {
+export class AppListingComponent {
     urlIcons: UrlIcons = new UrlIcons();
-    sub: Subscription;
     apps_id: number;
     is_not_found: boolean;
     hasGithubRepo: boolean;
@@ -136,51 +137,18 @@ export class AppListingComponent implements OnInit, OnDestroy {
     searchString: string;
     isAccepted: boolean;
     itchUrl;
+
     constructor(
         private router: Router,
         public service: AppService,
         public expanseService: ExpanseClientService,
-        route: ActivatedRoute,
         private sanitizer: DomSanitizer,
-        public lightbox: Lightbox
+        public lightbox: Lightbox,
+        @Inject(PLATFORM_ID) private platformId: Object,
+        routeListener: RouteListenerService,
+        activatedRoute: ActivatedRoute
     ) {
-        this.sub = this.router.events.subscribe(async val => {
-            if (val instanceof NavigationEnd) {
-                this.apps_id = Number(route.snapshot.paramMap.get('apps_id'));
-
-                const isLegacyClickthrough = route.snapshot.paramMap.get('app_name') === '1';
-                const isTrackingClickthrough = route.snapshot.queryParamMap.has('ct') || isLegacyClickthrough;
-
-                if (!Number.isInteger(this.apps_id)) {
-                    this.apps_id = null;
-                } else {
-                    this.service.getAppMeta(this.apps_id);
-                    this.app_meta = this.service.app_meta[this.apps_id];
-                }
-                this.page = 0;
-                await this.setupApp();
-
-                const appParamName = this.service.appParamName(this.currentApp);
-                const isAppNameCorrect = route.snapshot.paramMap.get('app_name') === appParamName;
-                if (!isAppNameCorrect) {
-                    const queryParams = {};
-                    if (isTrackingClickthrough) {
-                        queryParams['ct'] = '1';
-                    }
-                    return router.navigate(['/app/', this.apps_id, appParamName], { queryParams, replaceUrl: true });
-                }
-
-                await this.viewApp();
-                if (isTrackingClickthrough) {
-                    await this.clickThroughApp();
-                }
-                this.loading = false;
-                this.isMine =
-                    this.service.isAuthenticated &&
-                    Number(this.currentApp.users_id) === Number(this.expanseService.currentSession.users_id);
-                await this.getReviews();
-            }
-        });
+        routeListener.onParamsUpdate(activatedRoute, this.loadPage.bind(this));
     }
 
     done(e) {
@@ -195,25 +163,20 @@ export class AppListingComponent implements OnInit, OnDestroy {
         }, 750);
     }
 
-    getReviews() {
-        return this.expanseService
-            .getReviews(this.apps_id, 'apps', this.page, this.searchString)
-            .then((r: Review[]) => {
-                this.hasNoMoreReviews = r.length < 20;
-                if (this.page === 0) {
-                    this.reviews.length = 0;
-                }
-                this.isLoading = false;
-                this.reviews = this.reviews.concat(r);
-                this.page++;
-            })
-            .then(() => this.expanseService.getRating(this.apps_id, 'apps'))
-            .then((r: any) => {
-                if (r.length) {
-                    this.appRating = r[0].rating;
-                    this.appRatingTotal = r[0].total;
-                }
-            });
+    public async getReviews() {
+        const reviews = await this.expanseService.getReviews(this.apps_id, 'apps', this.page, this.searchString);
+        this.hasNoMoreReviews = reviews.length < 20;
+        if (this.page === 0) {
+            this.reviews.length = 0;
+        }
+        this.isLoading = false;
+        this.reviews = this.reviews.concat(reviews);
+        this.page++;
+        const ratings: any = await this.expanseService.getRating(this.apps_id, 'apps');
+        if (ratings.length > 0) {
+            this.appRating = ratings[0].rating;
+            this.appRatingTotal = ratings[0].total;
+        }
     }
 
     deleteReviewConfirm() {
@@ -298,27 +261,23 @@ export class AppListingComponent implements OnInit, OnDestroy {
     }
 
     async clickThroughApp() {
-        if (!this.app_meta.ct) {
-            return this.expanseService.appCount('click', this.apps_id).then((res: any) => {
-                if (!res.error) {
-                    this.service.app_meta[this.apps_id].ct = 1;
-                    this.counters.ct++;
-                    this.service.saveAppMeta();
-                }
-            });
-        }
+        if (isPlatformServer(this.platformId)) return;
+        if (this.app_meta.ct) return;
+        const res: any = this.expanseService.appCount('click', this.apps_id);
+        if (res.error) return;
+        this.service.app_meta[this.apps_id].ct = 1;
+        this.counters.ct++;
+        this.service.saveAppMeta();
     }
 
-    viewApp() {
-        if (!this.app_meta.v) {
-            return this.expanseService.appCount('view', this.apps_id).then((res: any) => {
-                if (!res.error) {
-                    this.service.app_meta[this.apps_id].v = 1;
-                    this.counters.v++;
-                    this.service.saveAppMeta();
-                }
-            });
-        }
+    async viewApp() {
+        if (isPlatformServer(this.platformId)) return;
+        if (this.app_meta.v) return;
+        const res: any = await this.expanseService.appCount('view', this.apps_id);
+        if (res.error) return;
+        this.service.app_meta[this.apps_id].v = 1;
+        this.counters.v++;
+        this.service.saveAppMeta();
     }
 
     likeApp() {
@@ -334,12 +293,6 @@ export class AppListingComponent implements OnInit, OnDestroy {
         } else {
             this.service.showMessage({}, 'You already liked that!');
         }
-    }
-
-    ngOnInit() {}
-
-    ngOnDestroy() {
-        this.sub.unsubscribe();
     }
 
     openImage(i: number) {
@@ -439,118 +392,143 @@ export class AppListingComponent implements OnInit, OnDestroy {
         this.service.openSidequestUrl(url.trim());
     }
 
-    async setupApp() {
-        if (this.apps_id) {
-            const apps = await this.expanseService.start().then(() => {
-                return this.expanseService.getApp(this.apps_id);
-            });
-            this.getUserInstalled();
-            if (!apps.length) {
-                this.apps_id = null;
-                this.is_not_found = true;
-            } else {
-                this.currentApp = apps[0];
-                if (!this.currentApp.early_access) {
-                    console.log('Current App: ', this.currentApp);
-                }
+    private async setupApp() {
+        if (!this.apps_id) return;
+        await this.expanseService.start();
+        const apps = await this.expanseService.getApp(this.apps_id);
+        if (!apps.length) {
+            this.apps_id = null;
+            this.is_not_found = true;
+        } else {
+            await this.getUserInstalled();
+            this.currentApp = apps[0];
+            if (!this.currentApp.early_access) {
+                console.log('Current App: ', this.currentApp);
+            }
+            if (isPlatformBrowser(this.platformId)) {
                 (window as any).packageName = this.currentApp.packagename;
-                this.searchTags = (this.currentApp.search_tags || '').split(',').filter(t => t);
-                const counters = await this.expanseService.getAppTotals(this.apps_id);
-                counters.forEach(counter => {
-                    switch (counter.type) {
-                        case 'click':
-                            this.counters.ct = counter.counter;
-                            break;
-                        case 'view':
-                            this.counters.v = counter.counter;
-                            break;
-                        case 'download':
-                            this.counters.d = counter.counter;
-                            break;
-                        case 'like':
-                            this.counters.l = counter.counter;
-                            break;
-                    }
+            }
+            this.searchTags = (this.currentApp.search_tags || '').split(',').filter(t => t);
+            const counters = await this.expanseService.getAppTotals(this.apps_id);
+            counters.forEach(counter => {
+                switch (counter.type) {
+                    case 'click':
+                        this.counters.ct = counter.counter;
+                        break;
+                    case 'view':
+                        this.counters.v = counter.counter;
+                        break;
+                    case 'download':
+                        this.counters.d = counter.counter;
+                        break;
+                    case 'like':
+                        this.counters.l = counter.counter;
+                        break;
+                }
+            });
+            const screenshots = await this.expanseService.getAppScreenshots(this.apps_id);
+            const sort = (a, b) => (a.provider > b.provider ? 1 : b.provider > a.provider ? -1 : 0);
+            this.app_urls = await this.expanseService.getAppUrls(this.apps_id);
+            if (!this.currentApp.early_access) {
+                console.log('APP Urls: ', this.app_urls);
+            }
+            this.donate_urls = this.app_urls.filter(
+                (url: AppUrl) => ['Patreon', 'Paypal', 'Kofi', 'Itch'].indexOf(url.provider) > -1
+            );
+            let itchUrl = this.app_urls.filter((url: AppUrl) => url.provider === 'Itch');
+            if (itchUrl.length) {
+                this.itchUrl = itchUrl[0];
+            }
+            this.store_urls = this.app_urls.filter(
+                (url: AppUrl) =>
+                    ['Oculus Quest', 'Oculus Go', 'Steam Page', 'Oculus Rift', 'Oculus GearVR', 'Viveport', 'Epic Store'].indexOf(
+                        url.provider
+                    ) > -1
+            );
+            this.donate_urls.sort(sort);
+            this.social_urls = this.app_urls.filter(
+                (url: AppUrl) =>
+                    ['Discord', 'Twitter', 'Youtube', 'Facebook', 'Instagram', 'Github', 'Reddit', 'Twitch', 'Vimeo'].indexOf(
+                        url.provider
+                    ) > -1
+            );
+            this.social_urls.sort(sort);
+            this.website_url = this.app_urls.filter((url: AppUrl) => url.provider === 'Website');
+            this.apk_download_urls = this.app_urls.filter(
+                (url: AppUrl) =>
+                    ['OBB', 'APK', 'SynthRiders Mod', 'BeatOn Mod', 'Github Release', 'Firefox Skybox'].indexOf(url.provider) > -1
+            );
+            this.screenshots = (screenshots || []).map(s => s.image_url);
+            this.album = this.screenshots.map(s => ({ src: s, thumb: s }));
+            if (this.currentApp.image_url) {
+                this.album.push({
+                    src: this.currentApp.image_url,
+                    thumb: this.currentApp.image_url,
                 });
-                const screenshots = await this.expanseService.getAppScreenshots(this.apps_id);
-                const sort = (a, b) => (a.provider > b.provider ? 1 : b.provider > a.provider ? -1 : 0);
-                this.app_urls = await this.expanseService.getAppUrls(this.apps_id);
-                if (!this.currentApp.early_access) {
-                    console.log('APP Urls: ', this.app_urls);
-                }
-                this.donate_urls = this.app_urls.filter(
-                    (url: AppUrl) => ['Patreon', 'Paypal', 'Kofi', 'Itch'].indexOf(url.provider) > -1
+            }
+            this.videoObject = urlParser.parse(this.currentApp.video_url);
+            if (this.videoObject) {
+                this.videoUrl = this.sanitizer.bypassSecurityTrustResourceUrl(
+                    this.videoObject.provider === 'youtube'
+                        ? 'https://www.youtube.com/embed/' + this.videoObject.id
+                        : 'https://player.vimeo.com/video/' + this.videoObject.id + '?byline=0&portrait=0&transparent=0'
                 );
-                let itchUrl = this.app_urls.filter((url: AppUrl) => url.provider === 'Itch');
-                if (itchUrl.length) {
-                    this.itchUrl = itchUrl[0];
-                }
-                this.store_urls = this.app_urls.filter(
-                    (url: AppUrl) =>
-                        [
-                            'Oculus Quest',
-                            'Oculus Go',
-                            'Steam Page',
-                            'Oculus Rift',
-                            'Oculus GearVR',
-                            'Viveport',
-                            'Epic Store',
-                        ].indexOf(url.provider) > -1
-                );
-                this.donate_urls.sort(sort);
-                this.social_urls = this.app_urls.filter(
-                    (url: AppUrl) =>
-                        ['Discord', 'Twitter', 'Youtube', 'Facebook', 'Instagram', 'Github', 'Reddit', 'Twitch', 'Vimeo'].indexOf(
-                            url.provider
-                        ) > -1
-                );
-                this.social_urls.sort(sort);
-                this.website_url = this.app_urls.filter((url: AppUrl) => url.provider === 'Website');
-                this.apk_download_urls = this.app_urls.filter(
-                    (url: AppUrl) =>
-                        ['OBB', 'APK', 'SynthRiders Mod', 'BeatOn Mod', 'Github Release', 'Firefox Skybox'].indexOf(url.provider) >
-                        -1
-                );
-                this.screenshots = (screenshots || []).map(s => s.image_url);
-                this.album = this.screenshots.map(s => ({ src: s, thumb: s }));
-                if (this.currentApp.image_url) {
-                    this.album.push({
-                        src: this.currentApp.image_url,
-                        thumb: this.currentApp.image_url,
-                    });
-                }
-                this.videoObject = urlParser.parse(this.currentApp.video_url);
-                if (this.videoObject) {
-                    this.videoUrl = this.sanitizer.bypassSecurityTrustResourceUrl(
-                        this.videoObject.provider === 'youtube'
-                            ? 'https://www.youtube.com/embed/' + this.videoObject.id
-                            : 'https://player.vimeo.com/video/' + this.videoObject.id + '?byline=0&portrait=0&transparent=0'
-                    );
-                }
+            }
 
+            if (isPlatformBrowser(this.platformId)) {
                 const sideQuest = (window as any).sideQuest;
                 if (sideQuest) {
                     this.isInstalled = sideQuest.installed.indexOf(this.currentApp.packagename) > -1;
                 }
-                const githubRelesUrls = this.app_urls.filter((url: AppUrl) => url.provider === 'Github Release');
+            }
+            const githubRelesUrls = this.app_urls.filter((url: AppUrl) => url.provider === 'Github Release');
+            if (
+                this.currentApp.github_enabled &&
+                this.currentApp.github_repo &&
+                this.currentApp.github_name &&
+                this.currentApp.github_tag &&
+                !githubRelesUrls.length
+            ) {
+                await this.findGitReleases();
                 if (
-                    this.currentApp.github_enabled &&
-                    this.currentApp.github_repo &&
-                    this.currentApp.github_name &&
-                    this.currentApp.github_tag &&
-                    !githubRelesUrls.length
+                    (this.currentApp.github_tag === '[ all ]' || this.currentApp.github_tag === '[ latest ]') &&
+                    (this.githubReleases || []).length
                 ) {
-                    await this.findGitReleases();
-                    if (
-                        (this.currentApp.github_tag === '[ all ]' || this.currentApp.github_tag === '[ latest ]') &&
-                        (this.githubReleases || []).length
-                    ) {
-                        this.isAllReleases = true;
-                        const first_release = this.githubReleases.shift();
-                        this.latest_tag = first_release.tag_name;
-                        this.latest_id = first_release.id;
+                    this.isAllReleases = true;
+                    const first_release = this.githubReleases.shift();
+                    this.latest_tag = first_release.tag_name;
+                    this.latest_id = first_release.id;
+                    this.apk_download_urls = this.apk_download_urls.concat(
+                        first_release.assets
+                            .filter((asset: any) => {
+                                return (
+                                    ['apk', 'obb'].indexOf(
+                                        asset.name
+                                            .split('.')
+                                            .pop()
+                                            .toLowerCase()
+                                    ) > -1
+                                );
+                            })
+                            .map(asset => {
+                                return {
+                                    link_url: asset.browser_download_url,
+                                    provider: asset.name
+                                        .split('.')
+                                        .pop()
+                                        .toUpperCase(),
+                                };
+                            })
+                    );
+                } else {
+                    const tag_release = (this.githubReleases || []).filter(
+                        release => release.tag_name === this.currentApp.github_tag
+                    );
+                    if (tag_release.length) {
+                        this.latest_tag = tag_release[0].tag_name;
+                        this.latest_id = tag_release[0].id;
                         this.apk_download_urls = this.apk_download_urls.concat(
-                            first_release.assets
+                            tag_release[0].assets
                                 .filter((asset: any) => {
                                     return (
                                         ['apk', 'obb'].indexOf(
@@ -571,36 +549,6 @@ export class AppListingComponent implements OnInit, OnDestroy {
                                     };
                                 })
                         );
-                    } else {
-                        const tag_release = (this.githubReleases || []).filter(
-                            release => release.tag_name === this.currentApp.github_tag
-                        );
-                        if (tag_release.length) {
-                            this.latest_tag = tag_release[0].tag_name;
-                            this.latest_id = tag_release[0].id;
-                            this.apk_download_urls = this.apk_download_urls.concat(
-                                tag_release[0].assets
-                                    .filter((asset: any) => {
-                                        return (
-                                            ['apk', 'obb'].indexOf(
-                                                asset.name
-                                                    .split('.')
-                                                    .pop()
-                                                    .toLowerCase()
-                                            ) > -1
-                                        );
-                                    })
-                                    .map(asset => {
-                                        return {
-                                            link_url: asset.browser_download_url,
-                                            provider: asset.name
-                                                .split('.')
-                                                .pop()
-                                                .toUpperCase(),
-                                        };
-                                    })
-                            );
-                        }
                     }
                 }
             }
@@ -611,14 +559,12 @@ export class AppListingComponent implements OnInit, OnDestroy {
         window.location.href = link;
     }
 
-    getUserInstalled() {
-        if (this.service.isAuthenticated) {
-            this.expanseService.searchInstalledApps('', 0, false, false, this.apps_id).then((r: any) => {
-                if (r.length) {
-                    this.installedVersion = r[0].current_version;
-                    this.isInstalled = true;
-                }
-            });
+    async getUserInstalled() {
+        if (!this.service.isAuthenticated) return;
+        const installedApps = await this.expanseService.searchInstalledApps('', 0, false, false, this.apps_id);
+        if (installedApps.length > 0) {
+            this.installedVersion = installedApps[0].current_version;
+            this.isInstalled = true;
         }
     }
 
@@ -674,5 +620,41 @@ export class AppListingComponent implements OnInit, OnDestroy {
 
     private isCurrentUserAppOwner(): boolean {
         return this.service.isAuthenticated && this.currentApp.users_id == this.expanseService.currentSession.users_id;
+    }
+
+    private async loadPage(route: ActivatedRouteSnapshot) {
+        this.apps_id = Number(route.paramMap.get('apps_id'));
+
+        const isLegacyClickthrough = route.paramMap.get('app_name') === '1';
+        const isTrackingClickthrough = route.queryParamMap.has('ct') || isLegacyClickthrough;
+
+        if (!Number.isInteger(this.apps_id)) {
+            this.apps_id = null;
+        } else {
+            this.service.getAppMeta(this.apps_id);
+            this.app_meta = this.service.app_meta[this.apps_id];
+        }
+        this.page = 0;
+        await this.setupApp();
+
+        const appParamName = this.service.appParamName(this.currentApp);
+        const isAppNameCorrect = route.paramMap.get('app_name') === appParamName;
+        if (!isAppNameCorrect) {
+            const queryParams = {};
+            if (isTrackingClickthrough) {
+                queryParams['ct'] = '1';
+            }
+            return this.router.navigate(['/app/', this.apps_id, appParamName], { queryParams, replaceUrl: true });
+        }
+
+        await this.viewApp();
+        if (isTrackingClickthrough) {
+            await this.clickThroughApp();
+        }
+        this.loading = false;
+        this.isMine =
+            this.service.isAuthenticated &&
+            Number(this.currentApp.users_id) === Number(this.expanseService.currentSession.users_id);
+        await this.getReviews();
     }
 }

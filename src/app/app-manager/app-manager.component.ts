@@ -1,5 +1,5 @@
-import { AfterViewInit, ChangeDetectorRef, Component, ContentChild, OnDestroy, OnInit, ViewChild } from '@angular/core';
-import { ActivatedRoute, NavigationCancel, NavigationEnd, Router } from '@angular/router';
+import { AfterViewInit, Component, OnDestroy, OnInit, ViewChild, Inject, PLATFORM_ID } from '@angular/core';
+import { ActivatedRoute, NavigationEnd, Router } from '@angular/router';
 import { AppService } from '../app.service';
 import { ExpanseClientService } from '../expanse-client.service';
 import { AppListing } from '../account/account.component';
@@ -9,11 +9,9 @@ import 'js-video-url-parser/lib/provider/vimeo';
 import 'js-video-url-parser/lib/provider/youtube';
 import { DomSanitizer, SafeUrl } from '@angular/platform-browser';
 
-import * as moment from 'moment';
-import DateOptions = Pickadate.DateOptions;
-import DateItem = Pickadate.DateItem;
 import { UploadService } from '../upload.service';
-import { PlatformLocation } from '@angular/common';
+import { PlatformLocation, isPlatformBrowser } from '@angular/common';
+
 export interface VideObject {
     id: string;
     mediaType: string;
@@ -129,7 +127,8 @@ export class AppManagerComponent implements OnInit, AfterViewInit, OnDestroy {
         private sanitizer: DomSanitizer,
         route: ActivatedRoute,
         public uploadService: UploadService,
-        private platformLocation: PlatformLocation
+        private platformLocation: PlatformLocation,
+        @Inject(PLATFORM_ID) private platformId: Object
     ) {
         this.dropFn = (e: any) => {
             e = e || event;
@@ -184,7 +183,9 @@ export class AppManagerComponent implements OnInit, AfterViewInit, OnDestroy {
                 reader.readAsText(e.dataTransfer.files[0]);
             }
         };
-        window.addEventListener('drop', this.dropFn, false);
+        if (isPlatformBrowser(this.platformId)) {
+            window.addEventListener('drop', this.dropFn, false);
+        }
         this.sub = this.router.events.subscribe(async val => {
             if (val instanceof NavigationEnd) {
                 this.apps_id = route.snapshot.paramMap.get('apps_id');
@@ -413,7 +414,9 @@ export class AppManagerComponent implements OnInit, AfterViewInit, OnDestroy {
 
     ngOnDestroy() {
         this.sub.unsubscribe();
-        window.removeEventListener('drop', this.dropFn, false);
+        if (isPlatformBrowser(this.platformId)) {
+            window.removeEventListener('drop', this.dropFn, false);
+        }
     }
 
     uploadIcon() {

@@ -1,5 +1,5 @@
 import { BrowserModule } from '@angular/platform-browser';
-import { NgModule } from '@angular/core';
+import { NgModule, Directive, Input } from '@angular/core';
 
 import { AppRoutingModule } from './app-routing.module';
 import { AppComponent } from './app.component';
@@ -100,6 +100,15 @@ import { AbbreviateNumberPipe } from './abbreviate-number.pipe';
 import { FormatNumberPipe } from './format-number.pipe';
 import { ScriptingNetworkingComponent } from './scripting-networking/scripting-networking.component';
 
+import { ServerMzModalModule } from './server-replacements/modal.module';
+import { ServerMzSidenavModule } from './server-replacements/sidenav.module';
+import { ServerMzTooltipModule } from './server-replacements/tooltip.module';
+
+import { AsyncApiCallHelperService } from './async-api-call-helper.service';
+import { RouteListenerService } from './route-listener.service';
+
+const isBrowser = !!global['$'];
+
 export function hljsLanguages() {
     return [{ name: 'cs', func: cs }];
 }
@@ -171,6 +180,7 @@ export function hljsLanguages() {
         ScriptingNetworkingComponent,
     ],
     imports: [
+        BrowserModule.withServerTransition({ appId: 'sidequest' }),
         // {
         //   adClient: 'ca-pub-4418999855454494',
         //   adSlot: 7259870550,
@@ -179,14 +189,13 @@ export function hljsLanguages() {
             languages: hljsLanguages,
         }),
         LazyLoadImageModule,
-        BrowserModule,
         AppRoutingModule,
         NgxMasonryModule,
         MzCollapsibleModule,
         MzToastModule,
+        isBrowser ? MzTooltipModule : ServerMzTooltipModule,
         MzSwitchModule,
-        MzTooltipModule,
-        MzSidenavModule,
+        isBrowser ? MzSidenavModule : ServerMzSidenavModule,
         MzInputModule,
         MzIconModule,
         MzIconMdiModule,
@@ -195,7 +204,7 @@ export function hljsLanguages() {
         MzRadioButtonModule,
         MzSelectModule,
         MzButtonModule,
-        MzModalModule,
+        isBrowser ? MzModalModule : ServerMzModalModule,
         FormsModule,
         ChartsModule,
         MzParallaxModule,
@@ -205,7 +214,6 @@ export function hljsLanguages() {
         RecaptchaModule,
         AutocompleteLibModule,
     ],
-    providers: [NotLoginGuard, LoginGuard, AppsToUpdateService],
-    bootstrap: [AppComponent],
+    providers: [NotLoginGuard, LoginGuard, AppsToUpdateService, AsyncApiCallHelperService, RouteListenerService],
 })
 export class AppModule {}

@@ -1,11 +1,9 @@
 import { AfterViewInit, Component, OnInit, Sanitizer, ViewChild } from '@angular/core';
 import { AppService } from '../app.service';
-import { DomSanitizer } from '@angular/platform-browser';
 import { AppListing } from '../account/account.component';
-import { IImage } from 'ng-simple-slideshow';
 import { ExpanseClientService } from '../expanse-client.service';
 import { ActivatedRoute, Router } from '@angular/router';
-import { map } from 'rxjs/operators';
+import fetch from 'cross-fetch';
 
 export interface NewsItem {
     title: string;
@@ -92,7 +90,7 @@ export class HomeComponent implements OnInit, AfterViewInit {
     // }
 
     ngOnInit() {
-        this.handleHashPath();
+        if (this.handleHashPath()) return;
         this.getNews();
         return this.expanseService
             .start()
@@ -224,10 +222,13 @@ export class HomeComponent implements OnInit, AfterViewInit {
 
     ngAfterViewInit() {}
 
-    private handleHashPath() {
+    private handleHashPath(): boolean {
         const fragment = this.activatedRoute.snapshot.fragment;
         if (fragment && fragment.length > 0) {
             this.router.navigateByUrl(fragment, { queryParamsHandling: 'preserve', replaceUrl: true });
+            return true;
+        } else {
+            return false;
         }
     }
 }

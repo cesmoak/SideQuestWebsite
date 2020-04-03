@@ -1,8 +1,10 @@
-import { Injectable } from '@angular/core';
+import { Injectable, Inject, PLATFORM_ID } from '@angular/core';
 import { MzModalComponent, MzToastService } from 'ngx-materialize';
 import { ExpanseClientService } from './expanse-client.service';
 import { Subject } from 'rxjs';
 import { AccountComponent, AppListing } from './account/account.component';
+import { isPlatformBrowser, DOCUMENT } from '@angular/common';
+import { LocalStorageService } from './local-storage.service';
 
 interface Notifications {
     friend_requests: any[];
@@ -84,10 +86,17 @@ export class AppService {
     private sidequestResolve: any;
     private sidequestReject: any;
 
-    constructor(private toastService: MzToastService) {
-        const userAgent = (navigator as any).userAgent.toLowerCase();
-        if (userAgent.indexOf(' electron/') > -1) {
-            this.hideLogo = true;
+    constructor(
+        private toastService: MzToastService,
+        private localStorage: LocalStorageService,
+        @Inject(PLATFORM_ID) private platformId: Object,
+        @Inject(DOCUMENT) private document: Document
+    ) {
+        if (isPlatformBrowser(this.platformId)) {
+            const userAgent = (navigator as any).userAgent.toLowerCase();
+            if (userAgent.indexOf(' electron/') > -1) {
+                this.hideLogo = true;
+            }
         }
         this.loadAppIndex();
         this.loadAppMeta();
@@ -111,7 +120,7 @@ export class AppService {
     }
 
     private scrollTo(pos) {
-        document.body.scrollTo(0, pos);
+        this.document.body.scrollTo(0, pos);
     }
 
     public remoteInstall(data) {
@@ -152,7 +161,7 @@ export class AppService {
     }
 
     public logout(expanseService) {
-        localStorage.removeItem('session' + expanseService.storageKey);
+        this.localStorage.removeItem('session' + expanseService.storageKey);
         expanseService.currentSession = null;
         this.isAuthenticated = false;
     }
@@ -203,72 +212,20 @@ export class AppService {
     }
 
     private loadAppIndex() {
-        let app_index = localStorage.getItem('app_index');
-        if (!app_index) {
-            this.defaultAppIndex();
-        } else {
-            try {
-                this.app_index = JSON.parse(app_index);
-            } catch (e) {
-                this.defaultAppIndex();
-            }
-        }
-    }
-
-    private defaultAppIndex() {
-        this.app_index = {};
+        this.app_index = this.localStorage.getJson('app_index') || {};
     }
 
     private loadAppMeta() {
-        let app_meta = localStorage.getItem('app_meta');
-        if (!app_meta) {
-            this.defaultAppMeta();
-        } else {
-            try {
-                this.app_meta = JSON.parse(app_meta);
-            } catch (e) {
-                this.defaultAppMeta();
-            }
-        }
-        let event_meta = localStorage.getItem('event_meta');
-        if (!event_meta) {
-            this.defaultEventMeta();
-        } else {
-            try {
-                this.event_meta = JSON.parse(event_meta);
-            } catch (e) {
-                this.defaultEventMeta();
-            }
-        }
-        let space_meta = localStorage.getItem('space_meta');
-        if (!space_meta) {
-            this.defaultSpaceMeta();
-        } else {
-            try {
-                this.space_meta = JSON.parse(space_meta);
-            } catch (e) {
-                this.defaultSpaceMeta();
-            }
-        }
-    }
-
-    private defaultAppMeta() {
-        this.app_meta = {};
-    }
-
-    private defaultEventMeta() {
-        this.event_meta = {};
-    }
-
-    private defaultSpaceMeta() {
-        this.space_meta = {};
+        this.app_meta = this.localStorage.getJson('app_meta') || {};
+        this.event_meta = this.localStorage.getJson('event_meta') || {};
+        this.space_meta = this.localStorage.getJson('space_meta') || {};
     }
 
     public saveAppMeta() {
-        localStorage.setItem('space_meta', JSON.stringify(this.space_meta));
-        localStorage.setItem('event_meta', JSON.stringify(this.event_meta));
-        localStorage.setItem('app_meta', JSON.stringify(this.app_meta));
-        localStorage.setItem('app_index', JSON.stringify(this.app_index));
+        this.localStorage.setJson('space_meta', this.space_meta);
+        this.localStorage.setJson('event_meta', this.event_meta);
+        this.localStorage.setJson('app_meta', this.app_meta);
+        this.localStorage.setJson('app_index', this.app_index);
     }
 
     public retrySidequestUrl() {

@@ -7,6 +7,8 @@ import { UploadService } from '../upload.service';
 import { Subscription } from 'rxjs';
 import { AppsToUpdateService } from '../apps-to-update.service';
 import { PlatformLocation } from '@angular/common';
+import { LocalStorageService } from '../local-storage.service';
+
 export interface Review {
     details: string;
     preview_image: string;
@@ -137,6 +139,7 @@ export interface SpaceListing {
     users_id?: number;
     rating?: number;
 }
+
 @Component({
     selector: 'app-account',
     templateUrl: './account.component.html',
@@ -236,13 +239,14 @@ export class AccountComponent implements OnInit, OnDestroy {
         public appService: AppService,
         public router: Router,
         public uploadService: UploadService,
-        private route: ActivatedRoute,
+        route: ActivatedRoute,
         private appsToUpdateService: AppsToUpdateService,
-        private platformLocation: PlatformLocation
+        private platformLocation: PlatformLocation,
+        private localStorage: LocalStorageService
     ) {
-        this.isDev = !!localStorage.getItem('isDeveloper');
-        this.isUpdated = !!localStorage.getItem('viewIsUpdated');
-        this.isUninstalled = !!localStorage.getItem('viewIsUninstalled');
+        this.isDev = !!this.localStorage.getItem('isDeveloper');
+        this.isUpdated = !!this.localStorage.getItem('viewIsUpdated');
+        this.isUninstalled = !!this.localStorage.getItem('viewIsUninstalled');
         this.expanseService.getUserSettings();
         this.appService.setAccountComponent(this);
         this.expanseService.refreshSession();
@@ -391,22 +395,22 @@ export class AccountComponent implements OnInit, OnDestroy {
 
     setDev() {
         if (this.isDev) {
-            localStorage.setItem('isDeveloper', 't');
+            this.localStorage.setItem('isDeveloper', 't');
         } else {
-            localStorage.removeItem('isDeveloper');
+            this.localStorage.removeItem('isDeveloper');
         }
     }
 
     saveMyAppsView() {
         if (this.isUninstalled) {
-            localStorage.setItem('viewIsUninstalled', 't');
+            this.localStorage.setItem('viewIsUninstalled', 't');
         } else {
-            localStorage.removeItem('viewIsUninstalled');
+            this.localStorage.removeItem('viewIsUninstalled');
         }
         if (this.isUpdated) {
-            localStorage.setItem('viewIsUpdated', 't');
+            this.localStorage.setItem('viewIsUpdated', 't');
         } else {
-            localStorage.removeItem('viewIsUpdated');
+            this.localStorage.removeItem('viewIsUpdated');
         }
     }
 

@@ -1,8 +1,14 @@
-import { Injectable } from '@angular/core';
+import { Injectable, PLATFORM_ID, Inject, NgZone, OnDestroy } from '@angular/core';
 import { AppService } from './app.service';
 import { Subject } from 'rxjs';
-import { AppListing, EventListing, SpaceListing } from './account/account.component';
+import { AppListing, EventListing, SpaceListing, Review } from './account/account.component';
 import { ScreenShot, AppCounter, AppUrl } from './app-manager/app-manager.component';
+import { isPlatformBrowser } from '@angular/common';
+import { LocalStorageService } from './local-storage.service';
+import { TransferCacheWebSocketService } from './transfer-cache-web-socket.service';
+import { isUndefined } from 'util';
+import { WebSocketService } from './web-socket.service';
+import { WebSocketLike } from './global-web-socket-handler';
 
 type MessageId = string;
 type MessageResponseData = any;
@@ -44,7 +50,7 @@ export interface SessionInfo {
 @Injectable({
     providedIn: 'root',
 })
-export class ExpanseClientService {
+export class ExpanseClientService implements OnDestroy {
     messageResolves: Record<MessageId, MessageResolveFunction>;
     isDev: string;
     url: string;
@@ -60,17 +66,23 @@ export class ExpanseClientService {
     state: any;
     stateWrap: any;
     updateLoopCount: number;
-    ws: WebSocket;
+    ws: WebSocketLike;
     socketId: any;
     currentSession?: SessionInfo;
     installedApps: AppListing[];
     default_app_ulrs: any[] = [];
     public installedAppsChangedAt = new Subject<number>();
+    private isDestroying = false;
 
-    constructor(private appService: AppService) {
-        this.messageResolves = {}; // localStorage.setItem('isDev','true');
-        // localStorage.removeItem("isDev");
-        this.isDev = localStorage.getItem('isDev');
+    constructor(
+        private appService: AppService,
+        private localStorage: LocalStorageService,
+        @Inject(PLATFORM_ID) private platformId: Object,
+        private transferCache: TransferCacheWebSocketService,
+        private webSocketService: WebSocketService
+    ) {
+        this.messageResolves = {};
+        this.isDev = this.localStorage.getItem('isDev');
 
         this.url = !!this.isDev ? 'ws://192.168.0.34:3000' : 'wss://api.sidequestvr.com';
 
@@ -82,6 +94,14 @@ export class ExpanseClientService {
         this.openResolves = [];
         this.storageKey = '';
     }
+
+    public ngOnDestroy() {
+        this.isDestroying = true;
+        if (this.isOpen) {
+            this.ws.close();
+        }
+    }
+
     setStorageKey(storageKey: string) {
         this.storageKey = storageKey || '';
     }
@@ -106,8 +126,10 @@ export class ExpanseClientService {
                 this.stateChanged = false;
                 this.stateWrap = { state: this.state };
                 this.setupWebsocket();
-                setInterval(() => this.updateLoop(), 200);
-                setInterval(() => this.keepAlive(), 10000);
+                if (isPlatformBrowser(this.platformId)) {
+                    setInterval(() => this.updateLoop(), 200);
+                    setInterval(() => this.keepAlive(), 10000);
+                }
             }
             this.openResolves.push(resolve);
         });
@@ -153,7 +175,7 @@ export class ExpanseClientService {
         this.updateLoopCount = this.updateLoopCount || 0;
         if (this.stateChanged) {
             if (++this.updateLoopCount % 300 === 0) {
-                localStorage.setItem('current_rig' + this.storageKey, this.state.rig.toString() + ',' + new Date().getTime());
+                this.localStorage.setItem('current_rig' + this.storageKey, this.state.rig.toString() + ',' + new Date().getTime());
             }
             this.emit('state-update', this.stateWrap);
             this.stateChanged = false;
@@ -164,13 +186,13 @@ export class ExpanseClientService {
     }
     refreshGuestSession(options) {
         return this.emit('generate-guest-login', options).then((msg: any) => {
-            localStorage.setItem('session' + this.storageKey, JSON.stringify(msg));
-            localStorage.setItem('guest_token' + this.storageKey, msg.token);
+            this.localStorage.setJson('session' + this.storageKey, msg);
+            this.localStorage.setItem('guest_token' + this.storageKey, msg.token);
             return msg;
         });
     }
     getGuestSession() {
-        const guestToken = localStorage.getItem('guest_token' + this.storageKey);
+        const guestToken = this.localStorage.getItem('guest_token' + this.storageKey);
         if (!guestToken) {
             return this.refreshGuestSession({});
         } else {
@@ -179,7 +201,7 @@ export class ExpanseClientService {
     }
     getCurrentSession() {
         return new Promise((resolve, reject) => {
-            let session: any = localStorage.getItem('session' + this.storageKey);
+            let session: any = this.localStorage.getItem('session' + this.storageKey);
             if (!session) {
                 if (!this.preventGuest) {
                     this.getGuestSession().then(resolve);
@@ -192,10 +214,10 @@ export class ExpanseClientService {
                     setTimeout(() => {
                         this.refresh(session.token).then((msg: any) => {
                             if (!msg.error) {
-                                localStorage.setItem('session' + this.storageKey, JSON.stringify(msg));
+                                this.localStorage.setJson('session' + this.storageKey, msg);
                                 resolve(msg);
                             } else {
-                                localStorage.removeItem('session' + this.storageKey);
+                                this.localStorage.removeItem('session' + this.storageKey);
                                 return reject();
                             }
                         });
@@ -207,27 +229,65 @@ export class ExpanseClientService {
         });
     }
     setupWebsocket() {
-        this.ws = new WebSocket(this.url);
+        this.ws = this.webSocketService.createWebSocket(this.url);
         this.ws.onopen = evt => this.onOpen(evt);
         this.ws.onclose = evt => this.onClose(evt);
         this.ws.onmessage = evt => this.onMessage(evt);
         this.ws.onerror = evt => console.error(evt);
     }
-    emit(path, data) {
-        let time = '-' + new Date().getTime();
+
+    private shouldCacheResponse(path: string) {
+        const paths = [
+            'get-app',
+            'get-app-totals',
+            'get-app-screenshots',
+            'get-app-urls',
+            'get-reviews',
+            'get-rating',
+            'search-apps',
+        ];
+        return paths.includes(path);
+    }
+
+    private isAuthenticatedRequest(path: string) {
+        const paths = ['get-notifications'];
+        return paths.includes(path);
+    }
+
+    async emit(path, data) {
         return new Promise(resolve => {
-            try {
-                let token;
-                try {
-                    token = JSON.parse(localStorage.getItem('session' + this.storageKey)).token;
-                } catch (e) {}
-                if (this.isOpen) {
-                    this.ws.send(JSON.stringify({ path: path, data: data, token: token, time }));
+            const time = '-' + new Date().getTime();
+            const messageId = `${path}${time}`;
+            const cacheId = `${path}:${JSON.stringify(data)}`;
+            const response = this.transferCache.lookupResponse(cacheId);
+            const hasCachedResponse = !isUndefined(response);
+            if (hasCachedResponse) {
+                resolve(response);
+            } else {
+                if (this.shouldCacheResponse(path)) {
+                    this.transferCache.cacheMessageId(cacheId, messageId);
                 }
-            } catch (e) {
-                console.warn(e);
+                try {
+                    let token;
+                    try {
+                        token = (this.localStorage.getJson('session' + this.storageKey) || '').token;
+                    } catch (e) {}
+                    const hasAuthenticationIfNeeded = this.isAuthenticatedRequest(path) ? !!token : true;
+                    if (hasAuthenticationIfNeeded) {
+                        if (this.isOpen) {
+                            this.ws.send(JSON.stringify({ path, data, token, time }));
+                            this.messageResolves[messageId] = resolve;
+                        } else {
+                            resolve({ error: true, data: 'Error: Connection not open.' });
+                        }
+                    } else {
+                        resolve({ error: true, data: 'Error: Not logged in.' });
+                    }
+                } catch (e) {
+                    console.warn(e);
+                    resolve({ error: true, data: 'Error: Could not send message.' });
+                }
             }
-            this.messageResolves[path + time] = resolve;
         });
     }
     onOpen(evt) {
@@ -242,7 +302,9 @@ export class ExpanseClientService {
         console.log('Connection to API closed. Waiting ...');
         this.ws = null;
         this.isStarted = this.isOpen = false;
-        this.onreconnect();
+        if (!this.isDestroying) {
+            this.onreconnect();
+        }
     }
     onMessage(evt) {
         try {
@@ -269,6 +331,7 @@ export class ExpanseClientService {
             } else if (path === 'space-data') {
                 this.onspacedata(response.data);
             } else if (this.messageResolves[path]) {
+                this.transferCache.cacheResponse(path, response.data);
                 this.messageResolves[path](response.data);
             }
         } catch (e) {
@@ -281,7 +344,7 @@ export class ExpanseClientService {
     saveImage(file, token) {
         if (!token) {
             try {
-                token = JSON.parse(localStorage.getItem('session' + this.storageKey)).token;
+                token = (this.localStorage.getJson('session' + this.storageKey) || '').token;
             } catch (e) {}
         }
         let formData = new FormData();
@@ -301,7 +364,7 @@ export class ExpanseClientService {
     shortenUrl(url, name, token) {
         if (!token) {
             try {
-                token = JSON.parse(localStorage.getItem('session' + this.storageKey)).token;
+                token = this.localStorage.getJson('session' + this.storageKey).token;
             } catch (e) {}
         }
         return fetch(this.shortenerUrl + 'get-link/' + token + '/' + name + '/' + encodeURIComponent(url))
@@ -594,9 +657,11 @@ export class ExpanseClientService {
         });
     }
     setRemoteClient() {
-        const userAgent = (navigator as any).userAgent.toLowerCase();
-        if (userAgent.indexOf(' electron/') > -1) {
-            return this.emit('set-remote-client', {});
+        if (isPlatformBrowser(this.platformId)) {
+            const userAgent = (navigator as any).userAgent.toLowerCase();
+            if (userAgent.indexOf(' electron/') > -1) {
+                return this.emit('set-remote-client', {});
+            }
         }
     }
     getFriends(page, search) {
@@ -668,7 +733,7 @@ export class ExpanseClientService {
         return this.emit('get-rating', { item_id, type });
     }
     getReviews(item_id, type, page, search?, parent_id?) {
-        return this.emit('get-reviews', { item_id, type, page, search, parent_id });
+        return this.emit('get-reviews', { item_id, type, page, search, parent_id }) as Promise<Review[]>;
     }
     sendMessage(userId, message) {
         this.emit('user-message', { users_id: userId, message: { text: message } });
